@@ -1,0 +1,26 @@
+// 「なに語?」クイズのデータ。samples は、あいさつ・ありがとう・好き・身近な単語。
+// near はまちがえやすい言語(選択肢に1つ入れる)。tip は見分けるコツ。
+window.NANIGO = [
+  { id: 'ko', name: '韓国語', native: '한국어', tts: 'ko-KR', near: ['zh'], samples: ['안녕하세요', '감사합니다', '사랑해요', '고양이', '물'],
+    tip: '丸(ㅇ)や四角(ㅁ)と棒を組み合わせた、ブロックのような文字(ハングル)' },
+  { id: 'zh', name: '中国語', native: '中文', tts: 'zh-CN', near: ['ko'], samples: ['你好', '谢谢', '我爱你', '猫', '水'],
+    tip: '漢字だけで、ひらがなやカタカナがない。谢・爱 のように日本とちがう形の漢字もある' },
+  { id: 'en', name: '英語', native: 'English', tts: 'en-US', near: ['de'], samples: ['Hello', 'Thank you', 'I love you', 'cat', 'water'],
+    tip: 'ä や é のような記号がない。th・w がよく出る' },
+  { id: 'de', name: 'ドイツ語', native: 'Deutsch', tts: 'de-DE', near: ['en'], samples: ['Guten Tag', 'Danke schön', 'Ich liebe dich', 'Katze', 'Wasser'],
+    tip: 'ä ö ü ß がある。sch・ch がよく出る。名詞は大文字で始まる' },
+  { id: 'fr', name: 'フランス語', native: 'Français', tts: 'fr-FR', near: ['it'], samples: ['Bonjour', 'Merci beaucoup', "Je t'aime", 'chat', 'eau'],
+    tip: 'é è ç のような記号。最後の文字を読まないことが多い(chat は「シャ」)' },
+  { id: 'es', name: 'スペイン語', native: 'Español', tts: 'es-ES', near: ['pt', 'it'], samples: ['Hola', 'Gracias', 'Te quiero', 'gato', 'agua'],
+    tip: 'ñ や、さかさまの ¿ ¡ がある。o や a で終わる言葉が多い' },
+  { id: 'pt', name: 'ポルトガル語', native: 'Português', tts: 'pt-BR', near: ['es'], samples: ['Olá', 'Obrigado', 'Eu te amo', 'água'],
+    tip: 'ã õ のような「~」つきの文字。ção で終わる言葉が多い' },
+  { id: 'it', name: 'イタリア語', native: 'Italiano', tts: 'it-IT', near: ['es', 'fr'], samples: ['Ciao', 'Grazie', 'Ti amo', 'gatto', 'acqua'],
+    tip: 'ほとんどの言葉が母音で終わる。tt・cc のように同じ文字が2つ続く' },
+  { id: 'ru', name: 'ロシア語', native: 'Русский', tts: 'ru-RU', samples: ['Здравствуйте', 'Спасибо', 'Я тебя люблю', 'кошка', 'вода'],
+    tip: 'キリル文字。Я・Д・Ж のような、英語にない形の文字がまざる' },
+  { id: 'th', name: 'タイ語', native: 'ภาษาไทย', tts: 'th-TH', samples: ['สวัสดี', 'ขอบคุณ', 'ฉันรักคุณ', 'แมว', 'น้ำ'],
+    tip: '小さな丸がついた、くるくるした文字。言葉の間にスペースがない' },
+  { id: 'ar', name: 'アラビア語', native: 'العربية', tts: 'ar-SA', samples: ['مرحبا', 'شكرا', 'أحبك', 'قطة', 'ماء'],
+    tip: 'つながった文字を、右から左へ書く' },
+];

@@ -75,7 +75,7 @@ if (TTS.ok) { TTS.load(); speechSynthesis.onvoiceschanged = () => { TTS.load(); 
 
 // ---------- 発音チェック(音声認識。Android の Chrome などで使える)
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-const norm = s => String(s).replace(/[\s.,!?。、!?~]/g, '').toLowerCase();
+const norm = s => String(s).replace(/[\s.,!?。、!?~'’¿¡-]/g, '').toLowerCase();
 function listen(lang, target, btn, out) {
   if (!SR) return;
   const r = new SR();
@@ -100,7 +100,7 @@ function listen(lang, target, btn, out) {
 // ---------- 画面
 function render() {
   window.scrollTo(0, 0);
-  ({ home: renderHome, lang: renderLang, study: renderStudy, intro: renderIntro, quiz: renderQuiz, done: renderDone })[S.screen]();
+  ({ home: renderHome, lang: renderLang, study: renderStudy, intro: renderIntro, quiz: renderQuiz, done: renderDone, nanigo: renderNanigo })[S.screen]();
 }
 function go(screen, extra = {}) { if (TTS.ok) speechSynthesis.cancel(); S = { ...extra, screen }; render(); }
 const back = to => `<button class="link" id="back">← ${to}</button>`;
@@ -125,9 +125,11 @@ function renderHome() {
         <span class="track"><i style="width:${all.length ? got / all.length * 100 : 0}%"></i></span>
         <span class="small muted">覚えた ${got} / ${all.length}</span></button>`;
     }).join('')}</div>
+    ${window.NANIGO ? `<button class="mission" id="nanigo"><b>なに語? クイズ</b><span>${window.NANIGO.length}の言語から、見た目と音で当てよう</span></button>` : ''}
     <p class="small muted">ほかの言語は、これから順番に追加します。</p>
     <p class="foot small muted">音声は、この端末に入っている読み上げの声を使います。記録はこの端末のブラウザに保存されます。</p>`;
   app.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => go('lang', { lang: b.dataset.lang }));
+  const ng = app.querySelector('#nanigo'); if (ng) ng.onclick = () => startNanigo();
 }
 
 function renderLang() {
@@ -158,7 +160,9 @@ function renderLang() {
 
 // ハングルのしくみ(ブロックの組み立てを色分けで見せる)
 function renderIntro() {
-  const lang = langOf(S.lang);
+  const lang = langOf(S.lang), unit = unitOf(lang, S.unit);
+  const nextU = lang.units[lang.units.indexOf(unit) + 1];
+  if (unit.body) return renderIntroBody(lang, unit, nextU);
   const blk = (ch, parts, kana) => `<button class="blk" data-say="${ch}"><span class="big" style="font-family:${lang.font}">${ch}</span>
     <span class="eq">= ${parts.map(([p, c]) => `<i class="${c}" style="font-family:${lang.font}">${p}</i>`).join(' + ')}</span><span class="small muted">${kana} 🔊</span></button>`;
   app.innerHTML = `
@@ -172,11 +176,22 @@ function renderIntro() {
     <div class="blks">${blk('한', [['ㅎ', 'cC'], ['ㅏ', 'cV'], ['ㄴ', 'cP']], 'ハン')}${blk('국', [['ㄱ', 'cC'], ['ㅜ', 'cV'], ['ㄱ', 'cP']], 'クク')}</div>
     <p>2つ合わせると <button class="inl" data-say="한국" style="font-family:${lang.font}">한국 🔊</button>(ハングク)=「韓国」。</p>
     <p class="box small">ハングルは、朝鮮王朝の世宗(セジョン)大王のもとで1443年に作られ、1446年に「訓民正音(フンミンジョンウム)」として発表されました。音を出すときの口や舌の形をもとに、文字の形が考えられています(たとえば ㄱ は、舌のつけねがのどをふさぐ形)。</p>
-    <button class="primary" id="next">次へ: 基本の母音</button>`;
+    <button class="primary" id="next">次へ: ${esc(nextU.title)}</button>`;
   bindSay(lang);
   app.querySelectorAll('.blk').forEach(b => b.onclick = () => TTS.speak(b.dataset.say, lang.tts));
   app.querySelector('#back').onclick = () => go('lang', { lang: lang.id });
-  app.querySelector('#next').onclick = () => go('study', { lang: lang.id, unit: 'v1' });
+  app.querySelector('#next').onclick = () => go('study', { lang: lang.id, unit: nextU.id });
+}
+// body: { p: 説明(HTML、データ側で書いた固定の文) } / { ex: [[ことば, カタカナ, 意味], …] }
+function renderIntroBody(lang, unit, nextU) {
+  app.innerHTML = `
+    <div class="bar">${back(esc(lang.name))}</div>
+    <h2>${esc(unit.title)}</h2>
+    ${unit.body.map(b => b.p ? `<p>${b.p}</p>` : `<div class="list">${b.ex.map(([t, kana, ja]) => `<div class="row"><div class="rt">${ko(lang, esc(t), 'mid')}${sayBtns(lang, t)}</div><div><b>${esc(kana)}</b> ・ ${esc(ja)}</div></div>`).join('')}</div>`).join('')}
+    <button class="primary" id="next">次へ: ${esc(nextU.title)}</button>`;
+  bindSay(lang);
+  app.querySelector('#back').onclick = () => go('lang', { lang: lang.id });
+  app.querySelector('#next').onclick = () => go('study', { lang: lang.id, unit: nextU.id });
 }
 
 // 見て聞く(一覧)
@@ -189,7 +204,7 @@ function renderStudy() {
         <span class="big" style="font-family:${lang.font}">${esc(it.t)}</span>
         <b>${esc(it.kana)}</b>${it.ja ? `<span class="small">${esc(it.ja)}</span>` : ''}
         ${unit.with ? `<span class="small muted" style="font-family:${lang.font}">${esc(it.say)} の音</span>` : ''}
-        <span class="small muted">${esc(it.note)}</span></button>`).join('')}</div>
+        ${it.ex ? `<span class="small" style="font-family:${lang.font}">例: ${esc(it.ex)}</span>` : ''}<span class="small muted">${esc(it.note)}</span></button>`).join('')}</div>
       ${unit.compare ? `<h3>くらべて聞こう</h3><p class="small muted">ふつうの音・息を強く出す音・つまる音</p><div class="cmp">${unit.compare.map(g => `<div>${g.map(s => `<button data-say="${s}" style="font-family:${lang.font}">${s}</button>`).join('')}</div>`).join('')}</div>` : ''}`;
   } else if (unit.kind === 'syllables') {
     // 反切表: たてに子音、横に母音。マスをタップすると読む
@@ -242,7 +257,7 @@ function others(unit, it, n, key) {
   return out;
 }
 function makeQ(lang, unit, it) {
-  let types = TYPES[unit.kind];
+  let types = unit.types || TYPES[unit.kind];
   if (unit.kind === 'sentences' && it.tiles.length < 2) types = ['see', 'hear'];
   const type = types[Math.floor(Math.random() * types.length)];
   const q = { uid: unit.id, it, type };
@@ -259,9 +274,9 @@ function makeQ(lang, unit, it) {
     q.opts = shuffle([it, ...sameC, ...sameV]).map(x => ({ label: x.t, ok: x === it, ko: true }));
     return q;
   }
-  if (unit.compare && type === 'hear') {
-    // 濃音: 가・카・까 のように、まぎらわしい音どうしで選ぶ
-    const g = unit.compare.find(gr => gr.includes(it.say));
+  const g = unit.compare && type === 'hear' && unit.compare.find(gr => gr.includes(it.say));
+  if (g) {
+    // 濃音: 가・카・까 のように、まぎらわしい音どうしで選ぶ(싸 のように組がない字は、ふつうの「聞いて選ぶ」)
     const extra = shuffle(unit.items.filter(x => !g.includes(x.say))).slice(0, 1).map(x => x.say);
     q.opts = shuffle([...g, ...extra]).map(s => ({ label: s, ok: s === it.say, ko: true }));
     return q;
@@ -336,7 +351,7 @@ function answer(ok, btn) {
   app.querySelectorAll('.choice, .pick button, .tiles button, .line button, #ok').forEach(b => b.disabled = true);
   if (q.opts) app.querySelectorAll('[data-k]').forEach(b => { const o = q.opts[+b.dataset.k]; if (o.ok) b.classList.add('ok'); else if (b === btn) b.classList.add('ng'); });
   const detail = `<div class="ans">${ko(lang, esc(it.t), 'mid')}${sayBtns(lang, it.say)}
-    <div>${it.kana ? `<b>${esc(it.kana)}</b>` : ''}${it.rom && unit.kind === 'syllables' ? ` <span class="muted">(${esc(it.rom)})</span>` : ''}${it.ja ? ` ・ ${esc(it.ja)}` : ''}</div>
+    <div>${it.kana ? `<b>${esc(it.kana)}</b>` : ''}${it.rom && unit.kind === 'syllables' ? ` <span class="muted">(${esc(it.rom)})</span>` : ''}${it.ja ? ` ・ ${esc(it.ja)}` : ''}${it.ex ? ` ・ 例: ${ko(lang, esc(it.ex))}` : ''}</div>
     ${it.tiles && it.tiles.length > 1 ? `<div class="gloss">${it.tiles.map(([k, j]) => `<span>${ko(lang, esc(k))}<small>${esc(j)}</small></span>`).join('')}</div>` : ''}
     ${it.note ? `<div class="small muted">${esc(it.note)}</div>` : ''}</div>`;
   const last = S.i === S.qs.length - 1;
@@ -363,6 +378,55 @@ function renderDone() {
   const again = app.querySelector('#again');
   if (again) again.onclick = () => startQuiz(lang, unit);
   app.querySelector('#list').onclick = () => go(unit ? 'study' : 'lang', { lang: lang.id, unit: S.unit });
+}
+
+// ---------- なに語? クイズ(data/nanigo.js)
+// 1問 = 1つのことば。選択肢は4つの言語名。答えのあとに「見分けるコツ」
+function startNanigo() {
+  const L = window.NANIGO;
+  const pool = shuffle(L.flatMap(l => l.samples.map(s => ({ l, s })))).slice(0, 10);
+  const qs = pool.map(({ l, s }) => {
+    const near = (l.near || []).map(id => L.find(x => x.id === id)).filter(Boolean);
+    const rest = shuffle(L.filter(x => x !== l && !near.includes(x)));
+    const opts = shuffle([l, ...shuffle(near).slice(0, 1), ...rest].slice(0, 4));
+    return { l, s, opts };
+  });
+  go('nanigo', { qs, i: 0, score: 0 });
+}
+function renderNanigo() {
+  const q = S.qs[S.i], total = S.qs.length;
+  if (!q) { SE.play('result'); return renderNanigoDone(); }
+  const ngVoice = TTS.ok && TTS.has(q.l.tts);
+  app.innerHTML = `
+    <div class="bar"><button class="link" id="quit">✕ やめる</button><span class="small muted num">${S.i + 1} / ${total}</span></div>
+    <div class="track"><i style="width:${S.i / total * 100}%"></i></div>
+    <section class="qcard"><span class="tag">なに語?</span><p class="qtext">このことばは、なに語?</p>
+      <div class="qbig"><span class="tl ${q.s.length > 8 ? 'long' : ''}" lang="${q.l.tts.slice(0, 2)}" dir="auto">${esc(q.s)}</span></div>
+      ${ngVoice ? `<div class="qhear"><button class="say" id="ngsay">🔊 聞いてみる</button></div>` : ''}
+      <div class="choices">${q.opts.map((o, k) => `<button class="choice" data-k="${k}">${esc(o.name)}</button>`).join('')}</div>
+      <div id="after"></div></section>`;
+  app.querySelector('#quit').onclick = () => go('home');
+  const sb = app.querySelector('#ngsay'); if (sb) sb.onclick = () => TTS.speak(q.s, q.l.tts);
+  app.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
+    if (S.answered === S.i) return; S.answered = S.i;
+    const ok = q.opts[+b.dataset.k] === q.l; if (ok) S.score++;
+    SE.play(ok ? 'ok' : 'ng');
+    app.querySelectorAll('[data-k]').forEach(x => { x.disabled = true; if (q.opts[+x.dataset.k] === q.l) x.classList.add('ok'); else if (x === b) x.classList.add('ng'); });
+    const after = app.querySelector('#after');
+    after.innerHTML = `<div class="verdict ${ok ? 'ok' : 'ng'}"><b>${ok ? '正解!' : 'ざんねん'}</b><div><b>${esc(q.l.name)}</b>(${esc(q.l.native)})</div><div class="small">見分けるコツ: ${esc(q.l.tip)}</div></div>
+      <button class="primary" id="next">${S.i === total - 1 ? '結果を見る' : '次へ'}</button>`;
+    if (ngVoice) setTimeout(() => TTS.speak(q.s, q.l.tts), 300);
+    after.querySelector('#next').onclick = () => { S.i++; renderNanigo(); };
+    after.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+}
+function renderNanigoDone() {
+  app.innerHTML = `
+    <section class="qcard center"><p class="small muted">なに語? クイズ</p><p class="score num">${S.score} / ${S.qs.length}</p>
+      <p><b>${S.score === S.qs.length ? 'パーフェクト!' : S.score >= 7 ? 'よく見分けられたね!' : 'コツを思い出して、もう1回!'}</b></p></section>
+    <button class="primary" id="again">もう1回</button><button class="ghost" id="home">ホームへ</button>`;
+  app.querySelector('#again').onclick = () => startNanigo();
+  app.querySelector('#home').onclick = () => go('home');
 }
 
 render();

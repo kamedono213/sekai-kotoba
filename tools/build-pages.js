@@ -41,7 +41,7 @@ fs.writeFileSync(path.join(OUT, 'index.html'), html);
 fs.writeFileSync(path.join(OUT, 'manifest.webmanifest'), JSON.stringify({
   name: 'せかいのことば',
   short_name: 'ことば',
-  description: '韓国語のハングルから単語・かんたんな文まで、音を聞いて学ぶ語学アプリ',
+  description: '韓国語・英語・ドイツ語を、文字の読み方から単語・文まで音を聞いて学ぶ語学アプリ',
   lang: 'ja',
   start_url: './',
   scope: './',
