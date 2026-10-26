@@ -231,6 +231,21 @@ if (TTS.ok) { TTS.load(); speechSynthesis.onvoiceschanged = () => { TTS.load(); 
 // ---------- 発音チェック(音声認識。Android の Chrome などで使える)
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const norm = s => String(s).replace(/[\s.,!?。、!?~'’¿¡-]/g, '').toLowerCase();
+// ハングルは子音・母音に分けてくらべる(1文字ちがいでも「おしい」がわかるように)
+const jamo = s => [...s].map(c => { const k = c.charCodeAt(0) - 0xAC00; return k >= 0 && k < 11172 ? String.fromCharCode(0x1100 + Math.floor(k / 588), 0x1161 + Math.floor(k % 588 / 28)) + (k % 28 ? String.fromCharCode(0x11A7 + k % 28) : '') : c; }).join('');
+function dist(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+// 聞こえたことばと手本の近さ(0〜1)。手本をふくんでいれば1(「가」→「가요」など)
+function closeness(heard, target) {
+  const h = jamo(norm(heard)), t = jamo(norm(target));
+  if (!h || !t) return 0;
+  if (h === t || h.includes(t)) return 1;
+  return 1 - dist(h, t) / Math.max(h.length, t.length);
+}
 function listen(lang, target, btn, out) {
   if (!SR) return;
   const r = new SR();
@@ -241,13 +256,23 @@ function listen(lang, target, btn, out) {
   r.onresult = e => {
     got = true;
     const alts = [...e.results[0]].map(a => a.transcript);
-    const ok = alts.some(a => norm(a) === norm(target));
-    out.className = 'heard ' + (ok ? 'ok' : 'ng');
-    out.innerHTML = ok ? `ばっちり! 「${ko(lang, esc(alts.find(a => norm(a) === norm(target))))}」と聞こえたよ`
-      : `「${ko(lang, esc(alts[0]))}」と聞こえたよ。お手本を聞いて、もう1回!`;
-    SE.play(ok ? 'ok' : 'ng');
+    // いちばん近く聞こえた候補で判定する。0.8以上は「ばっちり」、0.5以上は「おしい」
+    const best = alts.map(a => ({ a, c: closeness(a, target) })).sort((x, y) => y.c - x.c)[0];
+    const level = best.c >= 0.8 ? 'ok' : best.c >= 0.5 ? 'near' : 'ng';
+    out.className = 'heard ' + (level === 'ng' ? 'ng' : 'ok');
+    out.innerHTML = level === 'ok' ? `ばっちり! 「${ko(lang, esc(best.a))}」と聞こえたよ`
+      : level === 'near' ? `おしい! 「${ko(lang, esc(best.a))}」と聞こえたよ。もう少しで正解!`
+      : `「${ko(lang, esc(best.a))}」と聞こえたよ。お手本を聞いて、もう1回!`;
+    SE.play(level === 'ng' ? 'ng' : 'ok');
   };
-  r.onerror = e => { out.className = 'heard ng'; out.textContent = e.error === 'not-allowed' ? 'マイクが使えません(ブラウザの設定でマイクを許可してね)' : '聞き取れなかったよ。もう1回!'; };
+  r.onerror = e => {
+    out.className = 'heard ng';
+    out.textContent = e.error === 'not-allowed' ? 'マイクが使えません(ブラウザの設定でマイクを許可してね)'
+      : e.error === 'no-speech' ? '声が聞こえなかったよ。ボタンを押してから、スマホに近づいて大きめの声で言ってみてね'
+      : e.error === 'network' ? 'インターネットにつながっていないと聞き取れないよ'
+      : e.error === 'language-not-supported' ? 'このスマホは、この言語の聞き取りに対応していないみたい'
+      : '聞き取れなかったよ。もう1回!';
+  };
   r.onend = () => { btn.disabled = false; btn.textContent = '🎤 言ってみる'; if (!got && !out.textContent) { out.className = 'heard ng'; out.textContent = '聞き取れなかったよ。もう1回!'; } };
   try { r.start(); } catch (e) { btn.disabled = false; btn.textContent = '🎤 言ってみる'; }
 }
