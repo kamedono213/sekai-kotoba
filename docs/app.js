@@ -246,35 +246,54 @@ function closeness(heard, target) {
   if (h === t || h.includes(t)) return 1;
   return 1 - dist(h, t) / Math.max(h.length, t.length);
 }
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+// 音声入力が使えないときの案内(iPhone はホーム画面のアプリでは使えないことが多い)
+function micHelp() {
+  if (IOS && STANDALONE) return 'iPhoneのホーム画面から開いたアプリでは、音声入力が使えないことがあります。Safariでこのページを開いて試してね';
+  if (IOS) return 'iPhoneでは「設定 → 一般 → キーボード → 音声入力」をオンにしてね。Safariで開いて試してね';
+  return 'このブラウザでは音声入力が使えません。AndroidならChromeで開いてね';
+}
+function judge(lang, target, alts, out) {
+  // いちばん近く聞こえた候補で判定する。0.8以上は「ばっちり」、0.5以上は「おしい」
+  const best = alts.map(a => ({ a, c: closeness(a, target) })).sort((x, y) => y.c - x.c)[0];
+  const level = best.c >= 0.8 ? 'ok' : best.c >= 0.5 ? 'near' : 'ng';
+  out.className = 'heard ' + (level === 'ng' ? 'ng' : 'ok');
+  out.innerHTML = level === 'ok' ? `ばっちり! 「${ko(lang, esc(best.a))}」と聞こえたよ`
+    : level === 'near' ? `おしい! 「${ko(lang, esc(best.a))}」と聞こえたよ。もう少しで正解!`
+    : `「${ko(lang, esc(best.a))}」と聞こえたよ。お手本を聞いて、もう1回!`;
+  SE.play(level === 'ng' ? 'ng' : 'ok');
+}
 function listen(lang, target, btn, out) {
-  if (!SR) return;
+  if (!SR) { out.className = 'heard ng'; out.textContent = micHelp(); return; }
+  speechSynthesis && speechSynthesis.cancel && speechSynthesis.cancel(); // 読み上げ中だとマイクが使えない端末がある
   const r = new SR();
-  r.lang = lang.tts; r.interimResults = false; r.maxAlternatives = 5;
+  // iPhone は最終結果が来ないまま終わることがあるので、途中の結果も受け取っておく
+  r.lang = lang.tts; r.interimResults = true; r.continuous = false; r.maxAlternatives = 5;
   btn.disabled = true; btn.textContent = '🎤 聞いています…';
   out.className = 'heard'; out.textContent = '';
-  let got = false;
+  let done = false, last = null;
   r.onresult = e => {
-    got = true;
-    const alts = [...e.results[0]].map(a => a.transcript);
-    // いちばん近く聞こえた候補で判定する。0.8以上は「ばっちり」、0.5以上は「おしい」
-    const best = alts.map(a => ({ a, c: closeness(a, target) })).sort((x, y) => y.c - x.c)[0];
-    const level = best.c >= 0.8 ? 'ok' : best.c >= 0.5 ? 'near' : 'ng';
-    out.className = 'heard ' + (level === 'ng' ? 'ng' : 'ok');
-    out.innerHTML = level === 'ok' ? `ばっちり! 「${ko(lang, esc(best.a))}」と聞こえたよ`
-      : level === 'near' ? `おしい! 「${ko(lang, esc(best.a))}」と聞こえたよ。もう少しで正解!`
-      : `「${ko(lang, esc(best.a))}」と聞こえたよ。お手本を聞いて、もう1回!`;
-    SE.play(level === 'ng' ? 'ng' : 'ok');
+    const res = e.results[e.results.length - 1];
+    last = [...res].map(x => x.transcript).filter(Boolean);
+    if (res.isFinal !== false && !done && last.length) { done = true; judge(lang, target, last, out); try { r.stop(); } catch (err) { /* 止まっていてもよい */ } }
   };
   r.onerror = e => {
+    if (done) return;
     out.className = 'heard ng';
-    out.textContent = e.error === 'not-allowed' ? 'マイクが使えません(ブラウザの設定でマイクを許可してね)'
+    out.textContent = e.error === 'not-allowed' || e.error === 'service-not-allowed'
+      ? (IOS ? micHelp() + '(マイクの使用も「許可」にしてね)' : 'マイクが使えません(ブラウザの設定でマイクを許可してね)')
       : e.error === 'no-speech' ? '声が聞こえなかったよ。ボタンを押してから、スマホに近づいて大きめの声で言ってみてね'
       : e.error === 'network' ? 'インターネットにつながっていないと聞き取れないよ'
       : e.error === 'language-not-supported' ? 'このスマホは、この言語の聞き取りに対応していないみたい'
       : '聞き取れなかったよ。もう1回!';
   };
-  r.onend = () => { btn.disabled = false; btn.textContent = '🎤 言ってみる'; if (!got && !out.textContent) { out.className = 'heard ng'; out.textContent = '聞き取れなかったよ。もう1回!'; } };
-  try { r.start(); } catch (e) { btn.disabled = false; btn.textContent = '🎤 言ってみる'; }
+  r.onend = () => {
+    btn.disabled = false; btn.textContent = '🎤 言ってみる';
+    if (!done && last && last.length) { done = true; judge(lang, target, last, out); return; }
+    if (!done && !out.textContent) { out.className = 'heard ng'; out.textContent = '聞き取れなかったよ。もう1回!'; }
+  };
+  try { r.start(); } catch (e) { btn.disabled = false; btn.textContent = '🎤 言ってみる'; out.className = 'heard ng'; out.textContent = micHelp(); }
 }
 
 // ---------- 画面
@@ -291,7 +310,7 @@ function bindSay(lang) {
 function bindMic(lang) {
   app.querySelectorAll('[data-mic]').forEach(b => b.onclick = e => { e.stopPropagation(); listen(lang, b.dataset.mic, b, b.parentElement.querySelector('.heard')); });
 }
-const micHTML = target => SR ? `<div class="mic"><button class="micbtn" data-mic="${esc(target)}">🎤 言ってみる</button><span class="heard"></span></div>` : '';
+const micHTML = target => `<div class="mic"><button class="micbtn" data-mic="${esc(target)}">🎤 言ってみる</button><span class="heard"></span></div>`;
 
 function renderHome() {
   app.innerHTML = `
