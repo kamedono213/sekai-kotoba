@@ -199,14 +199,30 @@ const TTS = {
   ok: 'speechSynthesis' in window,
   voices: [],
   load() { if (!this.ok) return; this.voices = speechSynthesis.getVoices(); },
-  voice(tag) { const l = tag.slice(0, 2).toLowerCase(); return this.voices.find(v => v.lang.replace('_', '-').toLowerCase() === tag.toLowerCase()) || this.voices.find(v => v.lang.toLowerCase().startsWith(l)); },
+  // 声の設定(言語ごとの声・声の高さ)。端末によって最初の声が低い男性の声のことがあるので、選べるようにする
+  prefs: (() => { try { return JSON.parse(localStorage.getItem('sk-tts')) || {}; } catch (e) { return {}; } })(),
+  savePrefs() { try { localStorage.setItem('sk-tts', JSON.stringify(this.prefs)); } catch (e) { /* 保存できなくても使える */ } },
+  list(tag) {
+    const l = tag.slice(0, 2).toLowerCase(), t = tag.toLowerCase();
+    const exact = this.voices.filter(v => v.lang.replace('_', '-').toLowerCase() === t);
+    return exact.concat(this.voices.filter(v => v.lang.toLowerCase().startsWith(l) && !exact.includes(v)));
+  },
+  voice(tag) {
+    const list = this.list(tag); if (!list.length) return null;
+    const saved = (this.prefs.voice || {})[tag];
+    return list.find(v => v.voiceURI === saved)
+      || list.find(v => /female|女性/i.test(v.name))
+      || list.find(v => !/\bmale\b|男性/i.test(v.name))
+      || list[0];
+  },
+  get pitch() { return this.prefs.pitch || 1; },
   has(tag) { return !!this.voice(tag); },
   speak(text, tag, slow) {
     if (!this.ok || !text) return;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = tag; const v = this.voice(tag); if (v) u.voice = v;
-    u.rate = slow ? 0.55 : 0.85;
+    u.rate = slow ? 0.55 : 0.85; u.pitch = this.pitch;
     speechSynthesis.speak(u);
   },
 };
@@ -271,6 +287,23 @@ function renderHome() {
   const ng = app.querySelector('#nanigo'); if (ng) ng.onclick = () => startNanigo();
 }
 
+function voiceSettings(lang) {
+  const list = TTS.list(lang.tts), cur = TTS.voice(lang.tts);
+  return `<details class="voiceset"><summary>🔊 声の設定(声が低い・聞きとりにくいとき)</summary>
+    ${list.length > 1 ? `<label>声の種類 <select id="vsel">${list.map((v, i) => `<option value="${i}" ${v === cur ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label>` : '<p class="small muted">この端末で使える声は1種類です。</p>'}
+    <label>声の高さ <input type="range" id="vpitch" min="0.6" max="1.6" step="0.1" value="${TTS.pitch}"> <span id="vpv">${TTS.pitch.toFixed(1)}</span></label>
+    <button class="say" id="vtest">▶ 試しに聞く</button>
+    <p class="small muted">それでも低いときは、スマホの「設定 → テキスト読み上げ(音声出力)」の「音の高さ」も確認してください。</p></details>`;
+}
+function bindVoiceSettings(lang) {
+  const sel = app.querySelector('#vsel'), pit = app.querySelector('#vpitch'), test = app.querySelector('#vtest');
+  if (!pit) return;
+  const sample = lang.hello || lang.native;
+  if (sel) sel.onchange = () => { const v = TTS.list(lang.tts)[+sel.value]; TTS.prefs.voice = Object.assign({}, TTS.prefs.voice, { [lang.tts]: v.voiceURI }); TTS.savePrefs(); TTS.speak(sample, lang.tts); };
+  pit.oninput = () => { app.querySelector('#vpv').textContent = (+pit.value).toFixed(1); };
+  pit.onchange = () => { TTS.prefs.pitch = +pit.value; TTS.savePrefs(); TTS.speak(sample, lang.tts); };
+  test.onclick = () => TTS.speak(sample, lang.tts);
+}
 function renderLang() {
   const lang = langOf(S.lang);
   const due = dueOf(lang);
@@ -279,6 +312,7 @@ function renderLang() {
     <div class="bar">${back('ホーム')}<span class="small muted">${esc(lang.name)}</span></div>
     <h2 class="lh" style="--lc:${lang.color}">${esc(lang.name)} ${ko(lang, esc(lang.native))}</h2>
     ${!TTS.ok || noVoice ? `<p class="warn">この端末には${esc(lang.name)}の読み上げの声が見つかりません。端末の設定(読み上げ・テキスト読み上げ)で${esc(lang.name)}の音声を追加すると、音が聞けます。</p>` : ''}
+    ${TTS.ok && TTS.list(lang.tts).length ? voiceSettings(lang) : ''}
     ${due.length ? `<button class="mission" id="review"><b>今日の復習 ${Math.min(10, due.length)}問</b><span>前にやった問題から、そろそろ忘れそうなものを出します</span></button>` : ''}
     ${GROUPS.map(([gid, gname, kinds]) => {
       const us = lang.units.filter(u => kinds.includes(u.kind));
@@ -289,6 +323,7 @@ function renderLang() {
       }).join('')}</div></section>`;
     }).join('')}`;
   app.querySelector('#back').onclick = () => go('home');
+  bindVoiceSettings(lang);
   const rv = app.querySelector('#review');
   if (rv) rv.onclick = () => startQuiz(lang, null);
   app.querySelectorAll('[data-unit]').forEach(b => b.onclick = () => {
